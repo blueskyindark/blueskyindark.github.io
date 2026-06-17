@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>航海气象题库练习</title>
-    <link rel="stylesheet" href="src/styles.css" />
+    <link rel="stylesheet" href="src/styles.css?v=20260618-exam2" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,6 +33,7 @@
             <button type="button" data-mode="starred">收藏</button>
             <button type="button" data-mode="wrong">错题</button>
             <button type="button" data-mode="short">简答</button>
+            <button type="button" data-mode="exam">考试</button>
           </div>
 
           <div class="segmented compact" id="orderTabs" role="tablist" aria-label="练习顺序">
@@ -102,6 +103,21 @@
           </div>
         </header>
 
+        <section class="exam-panel hidden" id="examPanel" aria-label="模拟考试">
+          <div class="exam-head">
+            <div>
+              <strong>模拟考试</strong>
+              <span id="examSummary">按章节占比抽取 60 道选择题</span>
+            </div>
+            <div class="exam-actions">
+              <button type="button" id="startExamBtn" class="primary-button">开始模拟考试</button>
+              <button type="button" id="submitExamBtn" class="ghost-button">交卷</button>
+              <button type="button" id="exitExamBtn" class="ghost-button">退出考试</button>
+            </div>
+          </div>
+          <div id="examReport" class="exam-report hidden"></div>
+        </section>
+
         <section class="question-panel" aria-live="polite">
           <div class="question-meta">
             <span id="chapterBadge"></span>
@@ -144,6 +160,6 @@
     <script src="src/questions.js"></script>
     <script src="src/sync-config.js?v=20260618-sync"></script>
     <script src="src/sync.js"></script>
-    <script src="src/app.js"></script>
+    <script src="src/app.js?v=20260618-exam2"></script>
   </body>
 </html>
