@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>航海气象题库练习</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">海</div>
+          <div>
+            <h1>航海气象题库</h1>
+            <p id="bankMeta">正在载入题库</p>
+          </div>
+        </div>
+
+        <section class="panel controls-panel" aria-label="筛选">
+          <label class="field">
+            <span>章节</span>
+            <select id="chapterSelect"></select>
+          </label>
+          <label class="field">
+            <span>搜索</span>
+            <input id="searchInput" type="search" placeholder="题干、选项或章节" autocomplete="off" />
+          </label>
+
+          <div class="segmented" id="modeTabs" role="tablist" aria-label="题目范围">
+            <button type="button" data-mode="all" class="active">全部</button>
+            <button type="button" data-mode="undone">未做</button>
+            <button type="button" data-mode="starred">收藏</button>
+            <button type="button" data-mode="wrong">错题</button>
+            <button type="button" data-mode="short">简答</button>
+          </div>
+
+          <div class="segmented compact" id="orderTabs" role="tablist" aria-label="练习顺序">
+            <button type="button" data-order="normal" class="active">顺序</button>
+            <button type="button" data-order="random">随机</button>
+          </div>
+        </section>
+
+        <section class="panel stats-panel" aria-label="练习统计">
+          <div class="stat-row">
+            <span>已做选择题</span>
+            <strong id="answeredStat">0</strong>
+          </div>
+          <div class="stat-row">
+            <span>正确率</span>
+            <strong id="accuracyStat">0%</strong>
+          </div>
+          <div class="stat-row">
+            <span>收藏</span>
+            <strong id="favoriteStat">0</strong>
+          </div>
+          <div class="stat-row">
+            <span>错题本</span>
+            <strong id="wrongStat">0</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div id="progressFill"></div>
+          </div>
+        </section>
+
+        <section class="panel sync-panel hidden" id="syncPanel" aria-label="云同步">
+          <div class="sync-head">
+            <strong>云同步</strong>
+            <span id="syncStatus">未连接</span>
+          </div>
+          <label class="field">
+            <span>同步码</span>
+            <input id="syncCodeInput" type="text" placeholder="输入或生成同步码" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="sync-actions">
+            <button type="button" id="generateSyncBtn" class="ghost-button">生成同步码</button>
+            <button type="button" id="connectSyncBtn" class="ghost-button">输入同步码</button>
+            <button type="button" id="syncNowBtn" class="primary-button">立即同步</button>
+            <button type="button" id="copySyncBtn" class="ghost-button">复制同步码</button>
+            <button type="button" id="disconnectSyncBtn" class="ghost-button danger">断开同步</button>
+          </div>
+          <p class="sync-help">同步码等同账号钥匙，拿到同步码的人可以同步这份做题记录。</p>
+        </section>
+
+        <section class="panel data-panel" aria-label="进度管理">
+          <button type="button" id="exportBtn" class="ghost-button">导出进度</button>
+          <button type="button" id="importBtn" class="ghost-button">导入进度</button>
+          <button type="button" id="resetBtn" class="ghost-button danger">重置进度</button>
+          <input id="importInput" type="file" accept="application/json" hidden />
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <div id="questionCounter" class="eyebrow">第 0 / 0 题</div>
+            <h2 id="questionTitle">题目</h2>
+          </div>
+          <div class="nav-actions" aria-label="题目导航">
+            <button type="button" id="prevBtn" class="icon-button" title="上一题" aria-label="上一题">‹</button>
+            <button type="button" id="nextBtn" class="icon-button" title="下一题" aria-label="下一题">›</button>
+          </div>
+        </header>
+
+        <section class="question-panel" aria-live="polite">
+          <div class="question-meta">
+            <span id="chapterBadge"></span>
+            <span id="typeBadge"></span>
+            <span id="statusBadge"></span>
+          </div>
+
+          <div id="contextNotice" class="notice hidden"></div>
+          <p id="questionText" class="question-text"></p>
+          <div id="figureNotice" class="figure-notice hidden"></div>
+          <div id="options" class="options"></div>
+
+          <div id="shortBox" class="short-box hidden">
+            <label class="field">
+              <span>自测笔记</span>
+              <textarea id="shortNote" rows="6" placeholder="写下自己的答案或复习要点"></textarea>
+            </label>
+          </div>
+
+          <div id="feedback" class="feedback hidden"></div>
+
+          <div class="question-actions">
+            <button type="button" id="favoriteBtn" class="ghost-button">☆ 收藏</button>
+            <button type="button" id="submitBtn" class="primary-button">提交答案</button>
+            <button type="button" id="showAnswerBtn" class="ghost-button">看答案</button>
+            <button type="button" id="masterBtn" class="ghost-button">标记掌握</button>
+          </div>
+        </section>
+
+        <section class="list-panel" aria-label="题目列表">
+          <div class="list-header">
+            <strong id="listTitle">题目列表</strong>
+            <span id="listCount">0 题</span>
+          </div>
+          <div id="questionList" class="question-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="src/questions.js"></script>
+    <script src="src/sync-config.js"></script>
+    <script src="src/sync.js"></script>
+    <script src="src/app.js"></script>
+  </body>
+</html>
