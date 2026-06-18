@@ -14,6 +14,8 @@
   const syncSettingsKey = testStorageKey !== null
     ? `marine-meteorology-sync-test-${testStorageKey || "default"}-v1`
     : "marine-meteorology-sync-v1";
+  const examQuestionCount = 60;
+  const autoAdvanceDelay = 600;
 
   const els = {
     bankMeta: document.getElementById("bankMeta"),
@@ -30,6 +32,12 @@
     questionTitle: document.getElementById("questionTitle"),
     prevBtn: document.getElementById("prevBtn"),
     nextBtn: document.getElementById("nextBtn"),
+    examPanel: document.getElementById("examPanel"),
+    examSummary: document.getElementById("examSummary"),
+    startExamBtn: document.getElementById("startExamBtn"),
+    submitExamBtn: document.getElementById("submitExamBtn"),
+    exitExamBtn: document.getElementById("exitExamBtn"),
+    examReport: document.getElementById("examReport"),
     chapterBadge: document.getElementById("chapterBadge"),
     typeBadge: document.getElementById("typeBadge"),
     statusBadge: document.getElementById("statusBadge"),
@@ -74,12 +82,28 @@
     },
     answers: {},
     favorites: {},
+    exam: freshExamState(),
   });
+
+  function freshExamState() {
+    return {
+      version: 1,
+      seed: "",
+      questionIds: [],
+      currentId: "",
+      answers: {},
+      drafts: {},
+      startedAt: "",
+      submittedAt: "",
+      completed: false,
+    };
+  }
 
   let state = loadState();
   let filteredQuestions = [];
   let syncManager = null;
   let latestSyncStatus = { state: "unconfigured", message: "云同步未配置" };
+  let autoAdvanceTimer = 0;
 
   function nowIso() {
     return new Date().toISOString();
@@ -113,6 +137,38 @@
     };
   }
 
+  function normalizeExamAnswer(record) {
+    const source = record && typeof record === "object" ? record : {};
+    return {
+      selected: Array.isArray(source.selected) ? source.selected.filter(Boolean) : [],
+      correct: typeof source.correct === "boolean" ? source.correct : false,
+      answeredAt: typeof source.answeredAt === "string" ? source.answeredAt : "",
+    };
+  }
+
+  function normalizeExamState(record) {
+    const source = record && typeof record === "object" ? record : {};
+    const next = {
+      ...freshExamState(),
+      ...source,
+      version: 1,
+      questionIds: Array.isArray(source.questionIds) ? source.questionIds.filter(Boolean) : [],
+      currentId: typeof source.currentId === "string" ? source.currentId : "",
+      answers: {},
+      drafts: {},
+      startedAt: typeof source.startedAt === "string" ? source.startedAt : "",
+      submittedAt: typeof source.submittedAt === "string" ? source.submittedAt : "",
+      completed: Boolean(source.completed),
+    };
+    Object.entries(source.answers || {}).forEach(([id, answer]) => {
+      next.answers[id] = normalizeExamAnswer(answer);
+    });
+    Object.entries(source.drafts || {}).forEach(([id, selected]) => {
+      next.drafts[id] = Array.isArray(selected) ? selected.filter(Boolean) : [];
+    });
+    return next;
+  }
+
   function migrateState(saved) {
     const fallbackAt = nowIso();
     const next = {
@@ -123,6 +179,7 @@
       filters: { ...freshState().filters, ...((saved && saved.filters) || {}) },
       answers: {},
       favorites: {},
+      exam: normalizeExamState(saved && saved.exam),
     };
 
     Object.entries((saved && saved.answers) || {}).forEach(([id, record]) => {
@@ -187,6 +244,14 @@
     return answer.length ? answer.join("、") : "无";
   }
 
+  function formatAccuracy(correct, total) {
+    return total ? `${Math.round((correct / total) * 100)}%` : "0%";
+  }
+
+  function cleanSelected(selected) {
+    return [...new Set((selected || []).filter(Boolean))];
+  }
+
   function sameAnswer(a, b) {
     return [...a].sort().join("") === [...b].sort().join("");
   }
@@ -200,7 +265,227 @@
     return hash >>> 0;
   }
 
+  function isExamMode() {
+    return state.filters.mode === "exam";
+  }
+
+  function examHasQuestions() {
+    return state.exam.questionIds.length > 0;
+  }
+
+  function questionById(id) {
+    return bank.questions.find((question) => question.id === id) || null;
+  }
+
+  function choiceQuestions() {
+    return bank.questions.filter((question) => question.type === "choice");
+  }
+
+  function sortedBySeed(questions, seed) {
+    return [...questions].sort((a, b) => hashText(`${seed}:${a.id}`) - hashText(`${seed}:${b.id}`));
+  }
+
+  function examAllocation(targetCount) {
+    const choiceByChapter = new Map();
+    choiceQuestions().forEach((question) => {
+      const key = String(question.chapterIndex);
+      if (!choiceByChapter.has(key)) choiceByChapter.set(key, []);
+      choiceByChapter.get(key).push(question);
+    });
+
+    const total = choiceQuestions().length;
+    const rows = bank.chapters.map((chapter) => {
+      const questions = choiceByChapter.get(String(chapter.index)) || [];
+      const exact = total ? (questions.length / total) * targetCount : 0;
+      return {
+        chapter,
+        questions,
+        exact,
+        count: Math.min(questions.length, Math.floor(exact)),
+      };
+    });
+
+    let remaining = targetCount - rows.reduce((sum, row) => sum + row.count, 0);
+    [...rows]
+      .sort((a, b) => {
+        const remainder = (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact));
+        return remainder || b.questions.length - a.questions.length;
+      })
+      .forEach((row) => {
+        if (remaining <= 0 || row.count >= row.questions.length) return;
+        row.count += 1;
+        remaining -= 1;
+      });
+
+    return rows;
+  }
+
+  function buildExamQuestionIds(seed) {
+    const target = Math.min(examQuestionCount, choiceQuestions().length);
+    const picked = [];
+    examAllocation(target).forEach((row) => {
+      picked.push(...sortedBySeed(row.questions, `${seed}:chapter:${row.chapter.index}`).slice(0, row.count));
+    });
+    return sortedBySeed(picked, `${seed}:paper`).map((question) => question.id);
+  }
+
+  function startExam() {
+    clearAutoAdvance();
+    const seed = String(Date.now());
+    const questionIds = buildExamQuestionIds(seed);
+    state.exam = {
+      ...freshExamState(),
+      seed,
+      questionIds,
+      currentId: questionIds[0] || "",
+      startedAt: nowIso(),
+    };
+    state.filters.mode = "exam";
+    state.currentId = state.exam.currentId;
+    saveState();
+    render();
+  }
+
+  function exitExamMode() {
+    clearAutoAdvance();
+    state.filters.mode = "all";
+    state.currentId = "";
+    saveState();
+    render();
+  }
+
+  function submitExam() {
+    if (!examHasQuestions()) return;
+    clearAutoAdvance();
+    state.exam.completed = true;
+    state.exam.submittedAt = nowIso();
+    saveState();
+    render();
+  }
+
+  function getExamAnswer(id) {
+    return state.exam.answers[id] || null;
+  }
+
+  function getExamDraft(id) {
+    return state.exam.drafts[id] || [];
+  }
+
+  function setExamDraft(id, selected) {
+    state.exam.drafts[id] = cleanSelected(selected);
+    saveState();
+  }
+
+  function clearAutoAdvance() {
+    if (!autoAdvanceTimer) return;
+    window.clearTimeout(autoAdvanceTimer);
+    autoAdvanceTimer = 0;
+  }
+
+  function setCurrentQuestion(id) {
+    clearAutoAdvance();
+    state.currentId = id || "";
+    if (isExamMode()) {
+      state.exam.currentId = state.currentId;
+    }
+    saveState();
+  }
+
+  function scheduleAutoAdvance(questionId) {
+    clearAutoAdvance();
+    autoAdvanceTimer = window.setTimeout(() => {
+      autoAdvanceTimer = 0;
+      if (state.currentId !== questionId) return;
+      const index = filteredQuestions.findIndex((question) => question.id === questionId);
+      const next = filteredQuestions[index + 1];
+      if (!next) return;
+      setCurrentQuestion(next.id);
+      render();
+    }, autoAdvanceDelay);
+  }
+
+  function displayProgress(question) {
+    if (isExamMode() && question.type === "choice") {
+      const examAnswer = getExamAnswer(question.id);
+      if (examAnswer) {
+        return {
+          ...getProgress(question.id),
+          selected: examAnswer.selected,
+          attempts: 1,
+          correct: examAnswer.correct,
+          revealed: false,
+          mastered: false,
+          wrongCount: examAnswer.correct ? 0 : 1,
+        };
+      }
+      return {
+        ...getProgress(question.id),
+        selected: getExamDraft(question.id),
+        attempts: 0,
+        correct: null,
+        revealed: false,
+        wrongCount: 0,
+      };
+    }
+    return getProgress(question.id);
+  }
+
+  function currentExamMetrics() {
+    const rows = state.exam.questionIds
+      .map((id) => questionById(id))
+      .filter(Boolean);
+    const answered = rows.filter((question) => getExamAnswer(question.id));
+    const correct = answered.filter((question) => getExamAnswer(question.id).correct);
+    const wrong = answered.length - correct.length;
+    const unanswered = rows.length - answered.length;
+    return { total: rows.length, answered: answered.length, correct: correct.length, wrong, unanswered };
+  }
+
+  function examChapterRows() {
+    const rowsByChapter = new Map();
+    state.exam.questionIds
+      .map((id) => questionById(id))
+      .filter(Boolean)
+      .forEach((question) => {
+        if (!rowsByChapter.has(question.chapterIndex)) {
+          rowsByChapter.set(question.chapterIndex, {
+            chapterIndex: question.chapterIndex,
+            chapter: question.chapter,
+            total: 0,
+            correct: 0,
+            wrong: 0,
+            unanswered: 0,
+          });
+        }
+        const row = rowsByChapter.get(question.chapterIndex);
+        const answer = getExamAnswer(question.id);
+        row.total += 1;
+        if (!answer) row.unanswered += 1;
+        else if (answer.correct) row.correct += 1;
+        else row.wrong += 1;
+      });
+    return [...rowsByChapter.values()]
+      .map((row) => ({
+        ...row,
+        accuracy: row.total ? Math.round((row.correct / row.total) * 100) : 0,
+      }))
+      .sort((a, b) => a.chapterIndex - b.chapterIndex);
+  }
+
+  function weakChapterRows() {
+    return [...examChapterRows()]
+      .sort((a, b) => {
+        const accuracy = a.accuracy - b.accuracy;
+        return accuracy || b.wrong - a.wrong || b.unanswered - a.unanswered || a.chapterIndex - b.chapterIndex;
+      })
+      .slice(0, 3);
+  }
+
   function getFilteredQuestions() {
+    if (isExamMode()) {
+      return state.exam.questionIds.map((id) => questionById(id)).filter(Boolean);
+    }
+
     const query = state.filters.query.trim().toLowerCase();
     const chapter = state.filters.chapter;
     const mode = state.filters.mode;
@@ -239,12 +524,21 @@
 
   function ensureCurrentQuestion() {
     if (!filteredQuestions.length) {
+      const hadCurrent = state.currentId || (isExamMode() && state.exam.currentId);
       state.currentId = "";
+      if (isExamMode()) state.exam.currentId = "";
+      if (hadCurrent) saveState();
       return null;
     }
-    const exists = filteredQuestions.some((question) => question.id === state.currentId);
+    const targetId = isExamMode() ? state.exam.currentId || state.currentId : state.currentId;
+    const exists = filteredQuestions.some((question) => question.id === targetId);
     if (!exists) {
       state.currentId = filteredQuestions[0].id;
+      if (isExamMode()) state.exam.currentId = state.currentId;
+      saveState();
+    } else if (state.currentId !== targetId) {
+      state.currentId = targetId;
+      if (isExamMode()) state.exam.currentId = targetId;
       saveState();
     }
     return filteredQuestions.find((question) => question.id === state.currentId);
@@ -255,14 +549,21 @@
     const current = ensureCurrentQuestion();
     renderControls();
     renderStats();
+    renderExamPanel();
     renderQuestion(current);
     renderQuestionList(current);
   }
 
   function renderControls() {
+    const examMode = isExamMode();
     els.bankMeta.textContent = `${bank.questions.length} 道题 · ${bank.chapters.length} 章`;
     els.chapterSelect.value = state.filters.chapter;
     els.searchInput.value = state.filters.query;
+    els.chapterSelect.disabled = examMode;
+    els.searchInput.disabled = examMode;
+    els.orderTabs.querySelectorAll("button").forEach((button) => {
+      button.disabled = examMode;
+    });
     setActiveButton(els.modeTabs, "mode", state.filters.mode);
     setActiveButton(els.orderTabs, "order", state.filters.order);
     renderSyncControls();
@@ -291,25 +592,122 @@
     els.progressFill.style.width = `${Math.round((answered.length / choiceQuestions.length) * 100)}%`;
   }
 
+  function renderExamPanel() {
+    if (!isExamMode()) {
+      hide(els.examPanel);
+      return;
+    }
+
+    show(els.examPanel);
+    const metrics = currentExamMetrics();
+    const hasPaper = examHasQuestions();
+    const completed = state.exam.completed;
+    const accuracy = formatAccuracy(metrics.correct, metrics.total);
+
+    els.startExamBtn.textContent = hasPaper ? "重新开始考试" : "开始模拟考试";
+    els.startExamBtn.classList.toggle("hidden", hasPaper && !completed);
+    els.submitExamBtn.classList.toggle("hidden", !hasPaper || completed);
+    els.exitExamBtn.classList.remove("hidden");
+
+    if (!hasPaper) {
+      els.examSummary.textContent = `按章节占比抽取 ${examQuestionCount} 道选择题`;
+      hide(els.examReport);
+      return;
+    }
+
+    if (completed) {
+      els.examSummary.textContent = `已交卷 · 正确 ${metrics.correct} / ${metrics.total} · 正确率 ${accuracy}`;
+      renderExamReport(metrics);
+      show(els.examReport);
+      return;
+    }
+
+    els.examSummary.textContent = `已答 ${metrics.answered} / ${metrics.total} · 正确 ${metrics.correct} · 错误 ${metrics.wrong} · 未答 ${metrics.unanswered}`;
+    hide(els.examReport);
+  }
+
+  function renderExamReport(metrics = currentExamMetrics()) {
+    const accuracy = formatAccuracy(metrics.correct, metrics.total);
+    const fragment = document.createDocumentFragment();
+
+    const metricGrid = document.createElement("div");
+    metricGrid.className = "exam-metrics";
+    [
+      ["总题数", metrics.total],
+      ["已答", metrics.answered],
+      ["正确", metrics.correct],
+      ["错误", metrics.wrong],
+      ["未答", metrics.unanswered],
+      ["正确率", accuracy],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "exam-metric";
+      const strong = document.createElement("strong");
+      strong.textContent = String(value);
+      const span = document.createElement("span");
+      span.textContent = label;
+      item.append(strong, span);
+      metricGrid.append(item);
+    });
+    fragment.append(metricGrid);
+
+    const weakTitle = document.createElement("strong");
+    weakTitle.textContent = "薄弱章节";
+    fragment.append(weakTitle);
+
+    const weakList = document.createElement("div");
+    weakList.className = "weak-list";
+    weakChapterRows().forEach((row) => {
+      const item = document.createElement("div");
+      item.textContent = `第 ${row.chapterIndex} 章 ${row.chapter}：${row.correct}/${row.total}，正确率 ${row.accuracy}%`;
+      weakList.append(item);
+    });
+    fragment.append(weakList);
+
+    const chapterTitle = document.createElement("strong");
+    chapterTitle.textContent = "章节表现";
+    fragment.append(chapterTitle);
+
+    const chapterRows = document.createElement("div");
+    chapterRows.className = "chapter-results";
+    examChapterRows().forEach((row) => {
+      const item = document.createElement("div");
+      item.className = "chapter-row";
+      const name = document.createElement("span");
+      name.textContent = `第 ${row.chapterIndex} 章 ${row.chapter}`;
+      const result = document.createElement("strong");
+      result.textContent = `${row.correct} 对 / ${row.wrong} 错 / ${row.unanswered} 未答 · ${row.accuracy}%`;
+      item.append(name, result);
+      chapterRows.append(item);
+    });
+    fragment.append(chapterRows);
+
+    els.examReport.replaceChildren(fragment);
+  }
+
   function renderQuestion(question) {
     if (!question) {
       els.questionCounter.textContent = "第 0 / 0 题";
-      els.questionTitle.textContent = "没有符合条件的题目";
+      els.questionTitle.textContent = isExamMode() ? "准备模拟考试" : "没有符合条件的题目";
       els.chapterBadge.textContent = "";
       els.typeBadge.textContent = "";
       els.statusBadge.textContent = "";
-      els.questionText.textContent = "换一个章节、搜索词或题目范围试试。";
+      els.questionText.textContent = isExamMode()
+        ? "点击“开始模拟考试”生成一套 60 道选择题。"
+        : "换一个章节、搜索词或题目范围试试。";
       els.options.replaceChildren();
       hide(els.contextNotice);
       hide(els.figureNotice);
       hide(els.shortBox);
       hide(els.feedback);
       hideActions(true);
+      els.prevBtn.disabled = true;
+      els.nextBtn.disabled = true;
       return;
     }
 
     hideActions(false);
-    const progress = getProgress(question.id);
+    const progress = displayProgress(question);
     const index = filteredQuestions.findIndex((item) => item.id === question.id);
     els.questionCounter.textContent = `第 ${index + 1} / ${filteredQuestions.length} 题`;
     els.questionTitle.textContent = `${question.chapter} · ${question.type === "choice" ? "选择题" : "简答题"} ${question.number}`;
@@ -339,11 +737,19 @@
     els.masterBtn.textContent = progress.mastered ? "已掌握" : "标记掌握";
 
     if (question.type === "choice") {
+      const examMode = isExamMode();
+      const examAnswered = examMode && Boolean(getExamAnswer(question.id));
       hide(els.shortBox);
-      show(els.showAnswerBtn);
       show(els.options);
       els.submitBtn.textContent = progress.attempts > 0 ? "再交一次" : "提交答案";
-      els.masterBtn.classList.toggle("hidden", progress.wrongCount === 0 && !progress.mastered);
+      if (examMode) {
+        hide(els.showAnswerBtn);
+        hide(els.masterBtn);
+      } else {
+        show(els.showAnswerBtn);
+        els.masterBtn.classList.toggle("hidden", progress.wrongCount === 0 && !progress.mastered);
+      }
+      els.submitBtn.classList.toggle("hidden", !question.multi || (examMode && (examAnswered || state.exam.completed)));
       renderOptions(question, progress);
       renderFeedback(question, progress);
     } else {
@@ -365,7 +771,8 @@
   }
 
   function renderOptions(question, progress) {
-    const submitted = progress.attempts > 0 || progress.revealed;
+    const locked = isExamMode() && (Boolean(getExamAnswer(question.id)) || state.exam.completed);
+    const submitted = progress.attempts > 0 || progress.revealed || (isExamMode() && state.exam.completed);
     const fragment = document.createDocumentFragment();
 
     question.choices.forEach((choice) => {
@@ -377,6 +784,10 @@
       if (submitted && question.answer.includes(choice.id)) button.classList.add("correct");
       if (submitted && progress.correct === false && progress.selected.includes(choice.id) && !question.answer.includes(choice.id)) {
         button.classList.add("wrong");
+      }
+      if (locked) {
+        button.disabled = true;
+        button.classList.add("locked");
       }
 
       const key = document.createElement("span");
@@ -416,6 +827,12 @@
       show(els.feedback);
       return;
     }
+    if (isExamMode() && state.exam.completed && !getExamAnswer(question.id)) {
+      els.feedback.textContent = `未作答。正确答案：${answerText(question.answer)}。`;
+      els.feedback.classList.add("info");
+      show(els.feedback);
+      return;
+    }
     hide(els.feedback);
   }
 
@@ -449,8 +866,11 @@
   }
 
   function renderQuestionList(current) {
-    els.listTitle.textContent = state.filters.mode === "wrong" ? "错题本" : "题目列表";
-    els.listCount.textContent = `${filteredQuestions.length} 题`;
+    const metrics = currentExamMetrics();
+    els.listTitle.textContent = isExamMode() ? "模拟考试" : state.filters.mode === "wrong" ? "错题本" : "题目列表";
+    els.listCount.textContent = isExamMode() && examHasQuestions()
+      ? `已答 ${metrics.answered} / ${metrics.total}`
+      : `${filteredQuestions.length} 题`;
     els.questionList.replaceChildren();
 
     if (!filteredQuestions.length) {
@@ -463,7 +883,7 @@
 
     const fragment = document.createDocumentFragment();
     filteredQuestions.forEach((question) => {
-      const progress = getProgress(question.id);
+      const progress = displayProgress(question);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "question-jump";
@@ -493,20 +913,58 @@
   }
 
   function chooseOption(choiceId) {
+    clearAutoAdvance();
     const question = currentQuestion();
     if (!question || question.type !== "choice") return;
-    const progress = getProgress(question.id);
-    const selected = [...progress.selected];
+    if (isExamMode() && (state.exam.completed || getExamAnswer(question.id))) return;
+
+    const selected = isExamMode() ? [...getExamDraft(question.id)] : [...getProgress(question.id).selected];
     let nextSelected;
     if (question.multi) {
       nextSelected = selected.includes(choiceId)
         ? selected.filter((item) => item !== choiceId)
         : [...selected, choiceId];
+      if (isExamMode()) {
+        setExamDraft(question.id, nextSelected);
+      } else {
+        setProgress(question.id, { selected: nextSelected, correct: null, revealed: false });
+      }
+      render();
+      return;
     } else {
       nextSelected = [choiceId];
     }
-    setProgress(question.id, { selected: nextSelected, correct: null, revealed: false });
+    submitChoiceAnswer(question, nextSelected, { autoAdvance: true });
+  }
+
+  function submitChoiceAnswer(question, selected, { autoAdvance = false } = {}) {
+    const clean = cleanSelected(selected);
+    if (!clean.length) return;
+    if (isExamMode() && (state.exam.completed || getExamAnswer(question.id))) return;
+
+    const correct = sameAnswer(clean, question.answer);
+    const progress = getProgress(question.id);
+    if (isExamMode()) {
+      state.exam.answers[question.id] = {
+        selected: clean,
+        correct,
+        answeredAt: nowIso(),
+      };
+      delete state.exam.drafts[question.id];
+    }
+    setProgress(question.id, {
+      selected: clean,
+      attempts: progress.attempts + 1,
+      correct,
+      wrongCount: correct ? progress.wrongCount : progress.wrongCount + 1,
+      mastered: correct ? progress.mastered : false,
+      revealed: false,
+      lastAnsweredAt: nowIso(),
+    });
     render();
+    if (autoAdvance && correct && !question.multi) {
+      scheduleAutoAdvance(question.id);
+    }
   }
 
   function submitCurrent() {
@@ -520,28 +978,23 @@
       return;
     }
 
-    if (!progress.selected.length) {
+    if (isExamMode() && (state.exam.completed || getExamAnswer(question.id))) return;
+
+    const selected = isExamMode() ? getExamDraft(question.id) : progress.selected;
+    if (!selected.length) {
       els.feedback.textContent = "请选择答案。";
       els.feedback.className = "feedback info";
       show(els.feedback);
       return;
     }
 
-    const correct = sameAnswer(progress.selected, question.answer);
-    setProgress(question.id, {
-      attempts: progress.attempts + 1,
-      correct,
-      wrongCount: correct ? progress.wrongCount : progress.wrongCount + 1,
-      mastered: correct ? progress.mastered : false,
-      revealed: false,
-      lastAnsweredAt: new Date().toISOString(),
-    });
-    render();
+    submitChoiceAnswer(question, selected);
   }
 
   function revealAnswer() {
     const question = currentQuestion();
     if (!question || question.type !== "choice") return;
+    if (isExamMode()) return;
     setProgress(question.id, { revealed: true });
     render();
   }
@@ -549,6 +1002,7 @@
   function toggleMastered() {
     const question = currentQuestion();
     if (!question) return;
+    if (isExamMode() && question.type === "choice") return;
     const progress = getProgress(question.id);
     setProgress(question.id, { mastered: !progress.mastered, note: question.type === "short" ? els.shortNote.value.trim() : progress.note });
     render();
@@ -558,8 +1012,7 @@
     const index = filteredQuestions.findIndex((question) => question.id === state.currentId);
     const next = filteredQuestions[index + offset];
     if (!next) return;
-    state.currentId = next.id;
-    saveState();
+    setCurrentQuestion(next.id);
     render();
   }
 
@@ -696,7 +1149,9 @@
       const button = event.target.closest("button[data-mode]");
       if (!button) return;
       state.filters.mode = button.dataset.mode;
-      state.currentId = "";
+      clearAutoAdvance();
+      state.currentId = state.filters.mode === "exam" ? state.exam.currentId || state.exam.questionIds[0] || "" : "";
+      if (state.filters.mode === "exam") state.exam.currentId = state.currentId;
       saveState();
       render();
     });
@@ -715,6 +1170,9 @@
 
     els.prevBtn.addEventListener("click", () => moveCurrent(-1));
     els.nextBtn.addEventListener("click", () => moveCurrent(1));
+    els.startExamBtn.addEventListener("click", startExam);
+    els.submitExamBtn.addEventListener("click", submitExam);
+    els.exitExamBtn.addEventListener("click", exitExamMode);
     els.options.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-choice]");
       if (button) chooseOption(button.dataset.choice);
@@ -740,8 +1198,7 @@
     els.questionList.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-id]");
       if (!button) return;
-      state.currentId = button.dataset.id;
-      saveState();
+      setCurrentQuestion(button.dataset.id);
       render();
     });
 

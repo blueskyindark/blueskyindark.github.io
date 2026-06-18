@@ -155,7 +155,7 @@ h2 {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -181,6 +181,11 @@ h2 {
   color: var(--teal-dark);
   box-shadow: 0 1px 6px rgba(41, 51, 44, 0.12);
   font-weight: 700;
+}
+
+.segmented button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .stats-panel {
@@ -286,6 +291,110 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.exam-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.exam-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.exam-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.exam-head span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.exam-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.exam-report {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.exam-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.exam-metric {
+  display: grid;
+  gap: 2px;
+  min-height: 64px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcf8;
+}
+
+.exam-metric strong {
+  font-size: 20px;
+}
+
+.exam-metric span,
+.weak-list,
+.chapter-row {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.weak-list,
+.chapter-results {
+  display: grid;
+  gap: 8px;
+}
+
+.weak-list div,
+.chapter-row {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfcf8;
+}
+
+.weak-list div {
+  padding: 8px 10px;
+}
+
+.chapter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+}
+
+.chapter-row span {
+  min-width: 0;
+}
+
+.chapter-row strong {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .nav-actions,
@@ -418,6 +527,15 @@ h2 {
 .option-button:focus {
   border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+.option-button:disabled {
+  cursor: default;
+}
+
+.option-button.locked:hover,
+.option-button.locked:focus {
+  box-shadow: none;
 }
 
 .option-button.selected {
@@ -573,6 +691,10 @@ h2 {
   .options {
     grid-template-columns: 1fr;
   }
+
+  .exam-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -584,6 +706,40 @@ h2 {
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .segmented {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .exam-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .exam-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .exam-actions button {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .exam-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chapter-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .chapter-row strong {
+    white-space: normal;
   }
 
   .nav-actions {
