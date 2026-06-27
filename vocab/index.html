@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>航海英语阅读与写作背词</title>
+  <link rel="stylesheet" href="styles.css?v=20260627-vocab">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <h1>航海英语阅读与写作背词</h1>
+            <p id="subtitle">201个词条，按考试题型来练</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="button" id="shuffleBtn" type="button">↻ 随机</button>
+          <button class="button" id="syncTopBtn" type="button">云同步</button>
+          <button class="button danger" id="resetBtn" type="button">清记录</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="side" aria-label="学习设置">
+        <section class="panel">
+          <div class="stats">
+            <div class="stat"><strong id="totalStat">201</strong><span>词条</span></div>
+            <div class="stat"><strong id="masteredStat">0</strong><span>掌握</span></div>
+            <div class="stat"><strong id="wrongStat">0</strong><span>错题</span></div>
+            <div class="stat"><strong id="favoriteStat">0</strong><span>收藏</span></div>
+          </div>
+        </section>
+
+        <nav class="panel tabs" aria-label="模式切换">
+          <button class="tab" data-mode="review" aria-selected="true" type="button"><span>背诵模式</span><small>翻卡</small></button>
+          <button class="tab" data-mode="cn2en" aria-selected="false" type="button"><span>汉译英</span><small>输入</small></button>
+          <button class="tab" data-mode="en2cn" aria-selected="false" type="button"><span>英译汉</span><small>自评</small></button>
+          <button class="tab" data-mode="exam" aria-selected="false" type="button"><span>模拟考试</span><small>30题</small></button>
+          <button class="tab" data-mode="book" aria-selected="false" type="button"><span>错题收藏</span><small>复盘</small></button>
+        </nav>
+
+        <section class="panel">
+          <h2 class="panel-title">词表范围</h2>
+          <label class="field">
+            <span>单元</span>
+            <select id="unitSelect"></select>
+          </label>
+          <div class="chips" role="group" aria-label="词条筛选">
+            <button class="chip active" data-filter="all" type="button">全部</button>
+            <button class="chip" data-filter="wrong" type="button">错题</button>
+            <button class="chip" data-filter="favorite" type="button">收藏</button>
+          </div>
+          <p class="note" id="scopeNote">当前使用全部词条。</p>
+        </section>
+
+        <section class="panel" id="syncPanel">
+          <div class="sync-head">
+            <h2 class="panel-title" style="margin:0">云同步</h2>
+            <span class="pill" id="syncStatus">未连接</span>
+          </div>
+          <label class="field">
+            <span>同步码</span>
+            <input id="syncCodeInput" type="text" autocomplete="off" spellcheck="false" placeholder="生成或输入同步码">
+          </label>
+          <div class="sync-actions">
+            <button class="button" id="generateSyncBtn" type="button">生成</button>
+            <button class="button primary" id="connectSyncBtn" type="button">连接</button>
+            <button class="button" id="syncNowBtn" type="button">立即同步</button>
+            <button class="button" id="copySyncBtn" type="button">复制</button>
+            <button class="button danger" id="disconnectSyncBtn" type="button">断开</button>
+          </div>
+          <p class="note">同步码等同账号钥匙。其他设备打开本页后输入同一同步码，就能同步进度。</p>
+        </section>
+      </aside>
+
+      <section class="study-surface" aria-live="polite">
+        <div class="surface-head">
+          <div>
+            <h2 id="modeTitle">背诵模式</h2>
+            <p id="modeDesc">点击卡片翻面，顺序或随机推进。</p>
+          </div>
+          <div class="surface-actions" id="modeActions"></div>
+        </div>
+        <div class="surface-body" id="content"></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="words.js?v=20260627-vocab"></script>
+  <script src="app.js?v=20260627-vocab"></script>
+</body>
+</html>
