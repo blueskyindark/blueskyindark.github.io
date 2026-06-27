@@ -58,7 +58,18 @@
     .danger { color: #7f1d1d; border-color: rgba(180,35,24,0.35); background: #fff1f2; }
 
     .main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 18px 0 34px; display: grid; grid-template-columns: 280px 1fr; gap: 18px; }
-    .side { display: flex; flex-direction: column; gap: 12px; align-self: start; position: sticky; top: 88px; }
+    .side {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-self: start;
+      position: sticky;
+      top: 88px;
+      max-height: calc(100vh - 104px);
+      overflow-y: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+    }
     .panel, .study-surface { background: rgba(255,255,255,0.94); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
     .panel { padding: 14px; }
     .panel-title { margin: 0 0 10px; font-size: 15px; font-weight: 900; }
